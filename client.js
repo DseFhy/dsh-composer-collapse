@@ -875,6 +875,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
+    var VERSION = '0.4.1';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
@@ -1132,9 +1133,11 @@ window.__ModuleLoader__.load({
         console.table(report.mutations.hotspots.map(function (e) { return { target: e.target, n: e.n, add: e.add, del: e.del, attr: e.attr }; }));
         console.groupEnd();
       } catch (error) { /* console closed */ }
+      var json = JSON.stringify(report, null, 2);
+      copyReport(json);
       var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       try {
-        var blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+        var blob = new Blob([json], { type: 'application/json' });
         var url = URL.createObjectURL(blob);
         var link = document.createElement('a');
         link.href = url;
@@ -1149,6 +1152,59 @@ window.__ModuleLoader__.load({
       return report;
     }
 
+    /**
+     * The download can be silent or blocked depending on the shell, so the report
+     * also goes to the clipboard: paste it straight into the chat.
+     */
+    function copyReport(json) {
+      var done = function () { toast('帧率报告已复制到剪贴板 · 直接粘贴到对话里即可（也会下载 JSON）'); };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(json).then(done, function () { legacyCopy(json, done); });
+          return;
+        }
+      } catch (error) { /* fall through */ }
+      legacyCopy(json, done);
+    }
+
+    function legacyCopy(json, done) {
+      try {
+        var area = document.createElement('textarea');
+        area.value = json;
+        area.setAttribute('readonly', '');
+        area.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(area);
+        area.select();
+        var ok = document.execCommand && document.execCommand('copy');
+        if (area.parentNode) area.parentNode.removeChild(area);
+        if (ok) done();
+        else toast('报告太大，复制失败：请到下载文件夹取 dshcc-perf-*.json');
+      } catch (error) { toast('报告复制失败：请到下载文件夹取 dshcc-perf-*.json'); }
+    }
+
+    var toastTimer = null;
+
+    function toast(text) {
+      try {
+        if (!document.body) return;
+        var el = document.getElementById('dshcc-toast');
+        if (el !== null && el.parentNode) el.parentNode.removeChild(el);
+        el = document.createElement('div');
+        el.id = 'dshcc-toast';
+        el.setAttribute('data-dshcc-chrome', '');
+        el.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:2147483647;' +
+          'padding:7px 12px;border-radius:10px;font:12.5px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;' +
+          'background:rgba(12,12,16,.88);color:#f0f0f7;box-shadow:0 4px 16px rgba(0,0,0,.4);transition:opacity .3s ease';
+        el.textContent = text;
+        document.body.appendChild(el);
+        if (toastTimer !== null) window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(function () {
+          el.style.opacity = '0';
+          window.setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+        }, 6000);
+      } catch (error) { /* ignore */ }
+    }
+
     /* one short toast per page load: proves which build is live and how to record */
     function announceLoaded() {
       try {
@@ -1158,7 +1214,7 @@ window.__ModuleLoader__.load({
         tip.style.cssText = 'position:fixed;left:12px;bottom:56px;z-index:2147483646;padding:6px 10px;border-radius:10px;' +
           'font:12px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:rgba(12,12,16,.84);color:#ececf3;' +
           'pointer-events:none;transition:opacity .35s ease;box-shadow:0 2px 10px rgba(0,0,0,.3)';
-        tip.textContent = 'composer-collapse 0.3.1 已加载 · Ctrl+Alt+P 或控制簇 ⏺ 录帧';
+        tip.textContent = 'composer-collapse ' + VERSION + ' 已加载 · Ctrl+Alt+P 或控制簇 ⏺ 录帧';
         document.body.appendChild(tip);
         window.setTimeout(function () { tip.style.opacity = '0'; }, 3600);
         window.setTimeout(function () { if (tip.parentNode) tip.parentNode.removeChild(tip); }, 4200);
