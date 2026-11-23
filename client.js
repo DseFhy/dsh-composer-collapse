@@ -248,6 +248,33 @@ window.__ModuleLoader__.load({
     function composerCard() { return document.querySelector('[data-composer-card]'); }
     function rootOf(card) { return card === null ? null : card.parentElement; }
 
+/* An editing lock: while the caret sits in an editable field (the
+   interjection box, an inline message editor) collapsing is suppressed, and
+   it stays suppressed for a short tail after the last keystroke so the
+   composer does not fold the moment the user pauses. */
+var EDIT_HOLD_MS = 2500;
+var lastEditAt = 0;
+
+function editableTarget(el) {
+  if (el === null || el === undefined) return false;
+  if (el.nodeType === 3) el = el.parentElement;
+  if (el === null || el === undefined || typeof el.closest !== 'function') return false;
+  if (el.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]') !== null) return true;
+  if (el.isContentEditable === true) return true;
+  return false;
+}
+
+function noteEdit() { lastEditAt = Date.now(); }
+
+function editingLocked() {
+  if (Date.now() - lastEditAt < EDIT_HOLD_MS) return true;
+  var el = document.activeElement;
+  if (editableTarget(el)) return true;
+  var card = composerCard();
+  if (card !== null && card.contains(el)) return true;
+  return false;
+}
+
     function markRoot(root) {
       if (root !== null && !root.hasAttribute('data-dshcc-root')) root.setAttribute('data-dshcc-root', '');
     }
@@ -617,6 +644,7 @@ window.__ModuleLoader__.load({
         var current = store.get();
         if (!current.auto || current.mode !== 'full') return;
         if (!pageUsable()) return;
+        if (editingLocked()) return;
         var card = composerCard();
         if (card === null) return;
         if (card.contains(document.activeElement)) return;
@@ -629,6 +657,7 @@ window.__ModuleLoader__.load({
           if (!now.auto || now.mode !== 'full') return;
           var liveCard = composerCard();
           if (liveCard === null) return;
+          if (editingLocked()) return;
           if (liveCard.contains(document.activeElement) || draftText(liveCard) !== '') return;
           setMode('mini', { persist: false });
         }, AUTO_DELAY_MS);
@@ -636,6 +665,7 @@ window.__ModuleLoader__.load({
 
       var onFocusIn = function () {
         quiet();
+        if (editableTarget(document.activeElement)) noteEdit();
         if (store.get().mode === 'mini') setMode('full', { persist: false });
       };
       var onFocusOut = function () { window.setTimeout(evaluate, 80); };
@@ -646,6 +676,20 @@ window.__ModuleLoader__.load({
       document.addEventListener('focusin', onFocusIn, true);
       document.addEventListener('focusout', onFocusOut, true);
       document.addEventListener('input', onInput, true);
+
+      /* Clicking into or typing in an editable field holds the lock. */
+      var onEditPointer = function (event) {
+        if (editableTarget(event.target)) noteEdit();
+      };
+      var onEditTyping = function (event) {
+        var card = composerCard();
+        if (editableTarget(event.target)) { noteEdit(); return; }
+        if (card !== null && event.target && card.contains(event.target)) noteEdit();
+      };
+      document.addEventListener('pointerdown', onEditPointer, true);
+      document.addEventListener('keydown', onEditTyping, true);
+      document.addEventListener('input', onEditTyping, true);
+      document.addEventListener('compositionstart', onEditTyping, true);
 
       var lastCheck = 0;
       var observer = new MutationObserver(function () {
@@ -665,6 +709,10 @@ window.__ModuleLoader__.load({
         document.removeEventListener('focusin', onFocusIn, true);
         document.removeEventListener('focusout', onFocusOut, true);
         document.removeEventListener('input', onInput, true);
+        document.removeEventListener('pointerdown', onEditPointer, true);
+        document.removeEventListener('keydown', onEditTyping, true);
+        document.removeEventListener('input', onEditTyping, true);
+        document.removeEventListener('compositionstart', onEditTyping, true);
         observer.disconnect();
         window.clearInterval(tick);
       };
@@ -805,6 +853,8 @@ window.__ModuleLoader__.load({
         if (now.mode !== 'full' || live.anchor === null) return;
         if (event.button !== 0) return;
         if (isOurChrome(event.target)) return;
+        if (editableTarget(event.target)) { noteEdit(); return; }
+        if (Date.now() - lastEditAt < EDIT_HOLD_MS) return;
         var card = composerCard();
         if (card === null) return;
         var rect = card.getBoundingClientRect();
@@ -912,7 +962,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.6.2';
+    var VERSION = '0.7.0';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 — 2025-11-24
+
+- **编辑/点击消息时强制不折叠**：新增交互锁 —— 焦点在可编辑字段（插话输入框、行内编辑框、`contenteditable`、`role=textbox`）时，自动缩小与「点消息收起」都不触发；最后一次输入/点击后再锁 2.5 秒，避免刚停手就被折走。
+- 锁的实现：`editableTarget(el)` 判定可编辑元素，`editingLocked()` 判定当前是否处于编辑态（含输入框仍有焦点），`noteEdit()` 记录最后一次编辑时间（`EDIT_HOLD_MS = 2500`）。
+- `startAutoShrink()` 的 `evaluate()` 与定时器回调各加一道 `editingLocked()` 检查；`onPointerDown()` 里点中可编辑元素直接 `noteEdit()` 返回，刚落键 2.5 秒内也不收起。
+
 ## 仓库工具 — 2025-11-23
 
 - 新增 `tools/patch-win32-transparency.mjs`：可选的 Windows 外壳补丁（`transparent: true`），带 `--dry-run` 与 `--restore`，字节级原地修改、文件大小不变。doc：README「可选：Windows 真透明」。
