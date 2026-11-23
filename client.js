@@ -11,8 +11,9 @@
  *   card, the summon bar, the recall pill and the control cluster.
  * - Collapsing reserves a 54px band at the bottom instead of collapsing to zero
  *   height, so the transcript stops above the bubble and never runs under it.
- * - Positions are tracked every animation frame, not on DOM mutations, so the
- *   chrome keeps up with Wallpaper Engine style parallax at full frame rate.
+ * - Positions are tracked on demand (scroll / resize / transition), never by a
+ *   resident rAF loop: a loop reading getBoundingClientRect every frame forced a
+ *   synchronous layout per frame and pinned ~40% of one CPU core.
  * - The control cluster dodges the queued-message bar that sits just above the
  *   composer card; it drops inside the card instead of overlapping.
  * - Clicking the conversation above the composer collapses it.
@@ -77,7 +78,7 @@ window.__ModuleLoader__.load({
       '}',
       /* ---------------- one frost recipe for every surface ---------------- */
       ':root{',
-      '  --dshcc-blur:20px; --dshcc-sat:1.45; --dshcc-bright:1.03;',
+      '  --dshcc-blur:8px; --dshcc-sat:1.4; --dshcc-bright:1.02;',
       '  --dshcc-tint:rgba(18,18,24,.42); --dshcc-tint-strong:rgba(18,18,24,.52);',
       '  --dshcc-edge:rgba(255,255,255,.18);',
       '}',
@@ -108,8 +109,10 @@ window.__ModuleLoader__.load({
       'html.dshcc-glass [data-dshcc-root] [data-composer-card]{',
       '  background:linear-gradient(157deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 40%,',
       '    rgba(255,255,255,.02) 60%, rgba(255,255,255,.09) 100%), var(--dshcc-tint) !important;',
-      '  -webkit-backdrop-filter:blur(var(--dshcc-blur)) saturate(var(--dshcc-sat)) brightness(var(--dshcc-bright));',
-      '  backdrop-filter:blur(var(--dshcc-blur)) saturate(var(--dshcc-sat)) brightness(var(--dshcc-bright));',
+      /* NO backdrop-filter here: a 20px blur over the whole composer re-blurs the
+         transcript on every keystroke and scroll tick — the single most expensive
+         thing this plugin used to do. A translucent gradient plus inner edges reads
+         almost the same and costs nothing. */
       '  border-radius:20px;',
       '  box-shadow:inset 0 1px 0 rgba(255,255,255,.30), inset 0 -1px 0 rgba(24,24,30,.38),',
       '    inset 1px 0 0 rgba(255,255,255,.12), inset -1px 0 0 rgba(24,24,30,.24),',
@@ -267,6 +270,8 @@ window.__ModuleLoader__.load({
       }
       store.set({ mode: mode });
       applyModeNow(mode);
+      /* follow the CSS transition, then go idle again */
+      pump(760);
     }
 
     function focusEditor(delay) {
@@ -292,6 +297,8 @@ window.__ModuleLoader__.load({
       followX: 0,
       followY: 0,
       lastSibling: null,
+      dockRect: null,
+      dockAt: 0,
     };
 
     function depthFactor() {
@@ -394,9 +401,37 @@ window.__ModuleLoader__.load({
       sibling.style.transform = 'translate3d(' + live.followX.toFixed(2) + 'px,' + live.followY.toFixed(2) + 'px,0)';
     }
 
-    function frame(now) {
+    var frameQueued = false;
+    var pumpUntil = 0;
+
+    /**
+     * Coalesce every layout read into a single rAF. The loop is demand driven:
+     * nothing is scheduled unless scroll/resize/mode change asks for it, so an
+     * idle window costs zero frames (a resident rAF loop reading
+     * getBoundingClientRect each frame was burning ~40% of one core).
+     */
+    function schedule() {
+      if (frameQueued) return;
+      frameQueued = true;
       live.raf = window.requestAnimationFrame(frame);
-      if (document.hidden) return;
+    }
+
+    /** Keep painting for a while — used while a CSS transition is running. */
+    function pump(ms) {
+      var now = window.performance && window.performance.now ? window.performance.now() : Date.now();
+      pumpUntil = Math.max(pumpUntil, now + (ms || 720));
+      schedule();
+    }
+
+    function frame(now) {
+      frameQueued = false;
+      live.raf = 0;
+      if (document.hidden) { pumpUntil = 0; return; }
+      paint(now);
+      if (now < pumpUntil) schedule(); else pumpUntil = 0;
+    }
+
+    function paint(now) {
       var card = composerCard();
       if (card === null) return;
       var root = card.parentElement;
@@ -416,7 +451,14 @@ window.__ModuleLoader__.load({
         };
         if (live.lastCard !== null) syncFollower(root, cardRect);
         live.lastCard = { left: cardRect.left, top: cardRect.top };
-        placeDock(cardRect);
+        /* hit-testing is expensive: only when the card actually moved, or on a slow tick */
+        var movedX = live.dockRect === null ? 999 : Math.abs(cardRect.right - live.dockRect.right);
+        var movedY = live.dockRect === null ? 999 : Math.abs(cardRect.top - live.dockRect.top);
+        if (movedX > 0.5 || movedY > 0.5 || now - live.dockAt > 400) {
+          placeDock(cardRect);
+          live.dockRect = { right: cardRect.right, top: cardRect.top };
+          live.dockAt = now;
+        }
         return;
       }
 
@@ -626,7 +668,7 @@ window.__ModuleLoader__.load({
       applyDocumentFlags();
       disposers.push(startAutoShrink());
 
-      var resizeObserver = new ResizeObserver(function () { /* the frame loop already tracks size */ });
+      var resizeObserver = new ResizeObserver(function () { schedule(); });
       resizeObserver.observe(document.body);
 
       var domObserver = new MutationObserver(function () {
@@ -634,8 +676,12 @@ window.__ModuleLoader__.load({
         if (card !== null) markRoot(rootOf(card));
         var hasCard = card !== null;
         if (hasCard !== store.get().hasCard) store.set({ hasCard: hasCard });
+        schedule();
       });
       domObserver.observe(document.body, { childList: true, subtree: true });
+
+      /* chrome mounts/unmounts with the mode: reposition right after each render */
+      disposers.push(store.subscribe(function () { schedule(); }));
 
       /* Coming back to the window must reopen an auto-shrunk composer even when
          no focusin fires (the same control keeps focus across the switch). */
@@ -644,6 +690,7 @@ window.__ModuleLoader__.load({
         var now = store.get();
         if (!now.hasCard) return;
         if (now.mode === 'mini' && now.userMode === 'full') setMode('full', { persist: false });
+        schedule();
       };
       window.addEventListener('focus', onWindowWake);
       document.addEventListener('visibilitychange', onWindowWake);
@@ -690,7 +737,17 @@ window.__ModuleLoader__.load({
       };
       window.addEventListener('keydown', onKey);
 
-      live.raf = window.requestAnimationFrame(frame);
+      /* demand driven: reposition on scroll/resize/wheel and during transitions only */
+      var kick = function () { schedule(); };
+      window.addEventListener('scroll', kick, true);
+      window.addEventListener('resize', kick);
+      window.addEventListener('wheel', kick, { passive: true });
+      disposers.push(function () {
+        window.removeEventListener('scroll', kick, true);
+        window.removeEventListener('resize', kick);
+        window.removeEventListener('wheel', kick);
+      });
+      schedule();
 
       var slotsCleanup = ctx.slots.inject('shell.overlay', function () {
         return ctx.slots.register({ name: 'shell.overlay', id: 'composer-collapse.controls' }, Chrome);
