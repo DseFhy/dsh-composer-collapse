@@ -594,6 +594,7 @@ window.__ModuleLoader__.load({
     var ICON_COLLAPSE = 'M3.5 6.5 8 11l4.5-4.5';
     var ICON_EXPAND = 'M3.5 9.5 8 5l4.5 4.5';
     var ICON_HIDE = 'M4 4l8 8M12 4l-8 8';
+    var ICON_RECORD = 'M8 3.4a4.6 4.6 0 1 0 0 9.2 4.6 4.6 0 0 0 0-9.2M8 6.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8';
 
     function trackPointer(event) {
       var node = event.currentTarget;
@@ -668,6 +669,10 @@ window.__ModuleLoader__.load({
           key: 'hide', d: ICON_HIDE, title: '隐藏对话栏 (Ctrl+Shift+H)',
           onClick: function () { setMode('hidden'); },
         }),
+        React.createElement(ControlButton, {
+          key: 'record', d: ICON_RECORD, title: '记录帧率 20 秒 (Ctrl+Alt+P)',
+          onClick: function () { perfToggle(); },
+        }),
         ));
       }
 
@@ -740,8 +745,14 @@ window.__ModuleLoader__.load({
           setMode('full');
           return;
         }
-        if (!event.ctrlKey || !event.shiftKey) return;
         var key = String(event.key).toLowerCase();
+        /* Ctrl+Alt+P also works: the app may claim Ctrl+Shift+P (command palette) */
+        if (event.ctrlKey && event.altKey && key === 'p') {
+          event.preventDefault();
+          perfToggle();
+          return;
+        }
+        if (!event.ctrlKey || !event.shiftKey) return;
         if (key === 'm') {
           event.preventDefault();
           setMode(store.get().mode === 'full' ? 'mini' : 'full');
@@ -759,7 +770,8 @@ window.__ModuleLoader__.load({
           perfToggle();
         }
       };
-      window.addEventListener('keydown', onKey);
+      window.addEventListener('keydown', onKey, true);
+      disposers.push(function () { window.removeEventListener('keydown', onKey, true); });
 
       /* Opt-in frame/render probe. Ctrl+Shift+P records 20 s and downloads JSON. */
       window.__dshccPerf = {
@@ -772,6 +784,7 @@ window.__ModuleLoader__.load({
         perfStop(true);
         if (window.__dshccPerf) delete window.__dshccPerf;
       });
+      announceLoaded();
 
       /* demand driven: reposition on scroll/resize/wheel and during transitions only */
       var kick = function () { schedule(); };
@@ -1094,6 +1107,22 @@ window.__ModuleLoader__.load({
         }, 3000);
       } catch (error) { /* download blocked */ }
       return report;
+    }
+
+    /* one short toast per page load: proves which build is live and how to record */
+    function announceLoaded() {
+      try {
+        if (!document.body) return;
+        var tip = document.createElement('div');
+        tip.setAttribute('data-dshcc-chrome', '');
+        tip.style.cssText = 'position:fixed;left:12px;bottom:56px;z-index:2147483646;padding:6px 10px;border-radius:10px;' +
+          'font:12px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:rgba(12,12,16,.84);color:#ececf3;' +
+          'pointer-events:none;transition:opacity .35s ease;box-shadow:0 2px 10px rgba(0,0,0,.3)';
+        tip.textContent = 'composer-collapse 0.3.1 已加载 · Ctrl+Alt+P 或控制簇 ⏺ 录帧';
+        document.body.appendChild(tip);
+        window.setTimeout(function () { tip.style.opacity = '0'; }, 3600);
+        window.setTimeout(function () { if (tip.parentNode) tip.parentNode.removeChild(tip); }, 4200);
+      } catch (error) { /* ignore */ }
     }
 
     function perfToggle() {
