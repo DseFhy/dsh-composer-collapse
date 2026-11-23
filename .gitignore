@@ -1,0 +1,14 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# never publish keys or local secrets
+.keys/
+*.pem
+*.key
+*.pub
+credentials.yaml
+.credentials.yaml
+.env
+.env.*

@@ -1,0 +1,41 @@
+{
+  "name": "@dsh-local/dsh-composer-collapse",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Collapse, auto-shrink, or hide the DSH Web GUI composer. Liquid-glass summon capsule, frame-synced parallax, wallpaper pass-through.",
+  "license": "MIT",
+  "author": "DseFhy",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "composer",
+    "ui",
+    "liquid-glass"
+  ],
+  "main": "index.js",
+  "exports": {
+    ".": { "default": "./index.js" },
+    "./client": { "default": "./client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "meta": {
+    "title": "Composer Collapse",
+    "description": "Collapse, auto-shrink, or hide the chat composer; a slim summon capsule and a floating recall pill bring it back."
+  }
+}

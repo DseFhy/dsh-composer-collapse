@@ -1,0 +1,11 @@
+# Bundle patch for @dsh-local/dsh-composer-collapse.
+#
+# Use this layer only when the package is installed as a profile *bundle*
+# (a `dependencies` entry in the profile's package.json, resolved from that
+# profile's node_modules). For the no-install route — copy the folder to
+# ~/.dsh/plugins/ and add one row to the profile's own cordis.patch.yml naming
+# the entry by path — this file is not used.
+- insert:
+    - id: composer-collapse
+      name: '@dsh-local/dsh-composer-collapse'
+      config: {}
