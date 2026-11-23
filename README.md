@@ -16,8 +16,8 @@ hidden  ── 完全隐藏，只留一条常驻召回胶囊
 - **自动缩小**：输入框为空、失去焦点约 2.2 秒后自动收成 `mini`；一聚焦、一打字立刻展开，不会打断输入。
 - **预留底部带**：收起后对话栏不再压到 0 高，而是保留 54px 的透明带。消息列表在这里停住，气泡落在带内 —— **不会盖住最后一条消息**。
 - **液态玻璃常开**：对话栏卡片、召唤胶囊、召回胶囊、控制簇共用同一套毛玻璃配方（`--dshcc-blur` / `--dshcc-sat` / `--dshcc-tint`），带跟随指针的镜面高光和拟态内阴影。
-- **帧同步跟随**：位置每帧从对话栏的真实 `getBoundingClientRect()` 重算（不是靠 `MutationObserver` 猜），所以配合壁纸引擎（Wallpaper Engine）的 3D 视差也能逐帧对齐，并带轻微 `perspective` 倾斜。
-- **避让排队消息栏**：控制簇优先落在卡片右上**外侧**，一旦那里有内容（例如排队消息栏），自动缩进卡片右上**内侧**，不重叠。
+- **气泡独立、不追帧**：收起后的胶囊只用「缓存的列中心 + 贴底」定位，不逐帧读 rect、不逐帧写样式，所以壁纸引擎怎么动都不会拖影、不会抖；展开时再刷新一次几何。
+- **控制簇不进卡片**：一直待在卡片外——优先右上外侧，被占用就再高一行，再不行退到左/右侧中部，**永远不会压在输入文字上**。壁纸引擎拖动时只走合成层位移，占用探测等停了再算。
 - **点消息即收起**：点对话栏上方的对话区域，自动收成气泡。
 - **壁纸透传**：可清掉 `html` / `body` / 应用外壳的背景，让壁纸从毛玻璃后面透出来。
 - **尊重 `prefers-reduced-motion`**：系统的减少动效偏好会关掉过渡。
@@ -95,7 +95,6 @@ git clone <this-repo> ~/.dsh/plugins/dsh-composer-collapse
 | `dshcc.mode` | `full` | 当前状态：`full` / `mini` / `hidden` |
 | `dshcc.auto` | `1` | `1` 开启自动缩小，`0` 关闭 |
 | `dshcc.wall` | `1` | `1` 开启壁纸透传（清背景），`0` 关闭 |
-| `dshcc.depth` | `1` | 3D 倾斜深度倍数，`0.2`–`2.5` |
 | `dshcc.follow` | `1` | `1` 让排队消息栏跟随对话栏位移，`0` 关闭 |
 | `dshcc.fps` | `120` | 跟随循环的帧率上限，可用 30–240，刷新后生效 |
 
@@ -142,7 +141,7 @@ node --check client.js    # 唯一的静态检查
 - **不发请求**：`client.js` 里没有任何 `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon` 调用，不向任何服务器上报。
 - **不读账户与模型信息**：不读取 DSH 的登录态、凭据、profile、会话内容、模型名、provider 配置或计费信息；只操作 DOM 与 `localStorage`。
 - **不落盘、不索引对话内容**：只处理元素位置（`getBoundingClientRect`）与输入框是否为空，不读取、不缓存、不传输消息正文。
-- **只存 6 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.depth` / `dshcc.follow` / `dshcc.fps`，值都是状态字符串或数字。
+- **只存 5 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.follow` / `dshcc.fps`，值都是状态字符串或数字。
 - **纯本地**：没有遥测、没有崩溃上报、没有第三方脚本、没有 `eval`/`new Function`、没有任何外链资源。
 - **帧率探测只在你手动按 `Ctrl+Shift+P` 时运行**：报告存在你本机（浏览器下载目录），不自动上传。报告含视口尺寸、UA、以及被操作的 DOM 节点选择器描述（如 `div.composer-card`），**不含**消息正文与输入内容。
 

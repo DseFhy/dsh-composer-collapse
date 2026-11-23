@@ -36,7 +36,6 @@ window.__ModuleLoader__.load({
     var KEY_MODE = 'dshcc.mode';
     var KEY_AUTO = 'dshcc.auto';
     var KEY_WALL = 'dshcc.wall';
-    var KEY_DEPTH = 'dshcc.depth';
     var KEY_FOLLOW = 'dshcc.follow';
     var AUTO_DELAY_MS = 2200;
     var CHROME_ATTR = 'data-dshcc-chrome';
@@ -299,13 +298,13 @@ window.__ModuleLoader__.load({
       lastSibling: null,
       dockRect: null,
       dockAt: 0,
+      dockBase: null,
+      dockX: 0,
+      dockY: 0,
+      dockMoving: false,
+      centerX: null,
+      styleKey: null,
     };
-
-    function depthFactor() {
-      var raw = parseFloat(readStored(KEY_DEPTH, '1'));
-      if (!isFinite(raw) || raw <= 0) return 1;
-      return Math.min(2.5, raw);
-    }
 
     /* --------------------------------------------------- collision avoiding */
 
@@ -336,33 +335,72 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------- control cluster */
 
     /** Keep the cluster off the queued-message bar sitting above the card. */
+    /**
+     * Keep the cluster glued to the card without hit-testing every frame: while
+     * the card is being moved (wallpaper-engine parallax) we only push the measured
+     * delta through a composited translate; the expensive occupancy probe runs
+     * once the motion settles, or when the drift gets large.
+     */
+    function followDockWith(cardRect, deltaX, deltaY, first, now) {
+      var el = live.dock;
+      if (el === null) return;
+      var moving = Math.abs(deltaX) > 0.35 || Math.abs(deltaY) > 0.35;
+      if (moving) {
+        live.dockX += deltaX;
+        live.dockY += deltaY;
+        live.dockMoving = true;
+      }
+      var drift = Math.abs(live.dockX) + Math.abs(live.dockY);
+      var settled = now - live.dockAt > 260;
+      if (first || live.dockBase === null || drift > 160 || (live.dockMoving && settled) || now - live.dockAt > 1500) {
+        live.dockX = 0;
+        live.dockY = 0;
+        live.dockMoving = false;
+        live.dockAt = now;
+        placeDock(cardRect);
+        return;
+      }
+      if (moving) applyDockTransform();
+    }
+
+    function applyDockTransform() {
+      var el = live.dock;
+      var base = live.dockBase;
+      if (el === null || base === null) return;
+      el.style.transform = 'translate(' + base.tx + ',' + base.ty + ') translate3d(' +
+        live.dockX.toFixed(2) + 'px,' + live.dockY.toFixed(2) + 'px,0)';
+    }
+
     function placeDock(cardRect) {
       var el = live.dock;
       if (el === null) return;
-      var outsideTop = cardRect.top - 30;
-      var outsideLeft = cardRect.right - 2;
-      var hit = contentAt(outsideLeft - 14, outsideTop + 12, true);
-      if (hit !== null) {
-        el.style.left = (cardRect.right - 6) + 'px';
-        el.style.top = (cardRect.top + 6) + 'px';
-        el.style.transform = 'translate(-100%, 0)';
-        return;
+      var height = el.offsetHeight || 26;
+      var gap = 6;
+      /* Never inside the card: an inset cluster sits on top of the text you are
+         typing. Prefer right above the card, then a second row higher, then the
+         free side. If everything is occupied we still stay outside the card. */
+      var candidates = [
+        { left: cardRect.right, top: cardRect.top - gap - height, tx: '-100%', ty: '0' },
+        { left: cardRect.right, top: cardRect.top - gap - height * 2 - 4, tx: '-100%', ty: '0' },
+        { left: cardRect.left - gap * 2, top: cardRect.top + cardRect.height / 2, tx: '-100%', ty: '-50%' },
+        { left: cardRect.right + gap * 2, top: cardRect.top + cardRect.height / 2, tx: '0', ty: '-50%' },
+      ];
+      var chosen = candidates[0];
+      for (var i = 0; i < candidates.length; i++) {
+        var cand = candidates[i];
+        var probeX = cand.tx === '-100%' ? cand.left - 12 : cand.left + 12;
+        var probeY = cand.ty === '-50%' ? cand.top : cand.top + height / 2;
+        if (probeX < 8 || probeX > window.innerWidth - 8) continue;
+        if (probeY < 8 || probeY > window.innerHeight - 8) continue;
+        if (contentAt(probeX, probeY, true) === null) { chosen = cand; break; }
       }
-      el.style.left = outsideLeft + 'px';
-      el.style.top = outsideTop + 'px';
-      el.style.transform = 'translate(-100%,-100%)';
+      el.style.left = chosen.left + 'px';
+      el.style.top = chosen.top + 'px';
+      live.dockBase = chosen;
+      applyDockTransform();
     }
 
     /* ------------------------------------------------------------ frame loop */
-
-    function tiltFor(rect) {
-      var depth = depthFactor();
-      var vx = (rect.left + rect.width / 2 - window.innerWidth / 2) / (window.innerWidth / 2 || 1);
-      var vy = (rect.top + rect.height / 2 - window.innerHeight / 2) / (window.innerHeight / 2 || 1);
-      var rotY = (-vx * 2.4 * depth).toFixed(2);
-      var rotX = (vy * 1.8 * depth).toFixed(2);
-      return 'perspective(760px) rotateX(' + rotX + 'deg) rotateY(' + rotY + 'deg)';
-    }
 
     /**
      * Mirror the composer's parallax onto the bar that queues messages above it,
@@ -470,39 +508,41 @@ window.__ModuleLoader__.load({
           width: cardRect.width,
           height: cardRect.height,
         };
-        if (live.lastCard !== null) syncFollower(root, cardRect);
+        live.centerX = cardRect.left + cardRect.width / 2;
+        var prev = live.lastCard;
+        var deltaX = prev === null ? 0 : cardRect.left - prev.left;
+        var deltaY = prev === null ? 0 : cardRect.top - prev.top;
+        if (prev !== null) syncFollower(root, cardRect);
         live.lastCard = { left: cardRect.left, top: cardRect.top };
-        /* hit-testing is expensive: only when the card actually moved, or on a slow tick */
-        var movedX = live.dockRect === null ? 999 : Math.abs(cardRect.right - live.dockRect.right);
-        var movedY = live.dockRect === null ? 999 : Math.abs(cardRect.top - live.dockRect.top);
-        if (movedX > 0.5 || movedY > 0.5 || now - live.dockAt > 400) {
-          placeDock(cardRect);
-          live.dockRect = { right: cardRect.right, top: cardRect.top };
-          live.dockAt = now;
-        }
+        followDockWith(cardRect, deltaX, deltaY, prev === null, now);
         return;
       }
 
       var anchor = live.anchor;
       if (anchor === null || anchor.width < 2) return;
-      var rect = root.getBoundingClientRect();
-      /* one long capsule, not a full-width bar */
+      /* Deliberately NOT synced to the composer's live rect. A wallpaper engine
+         moves the composer with a composited transform; JS can only observe that
+         one or two frames late, so chasing it made the capsule trail behind and
+         stutter. The capsule now keeps a cached column centre and stays put -
+         independent, no per-frame rect read, no lag. It re-derives geometry on
+         resize / mode change (anchor is refreshed whenever "full" paints). */
       var width = Math.min(200, Math.max(150, anchor.width - 24));
-      var left = rect.left + anchor.padLeft + (anchor.width - width) / 2;
+      var centerX = live.centerX === null ? window.innerWidth / 2 : live.centerX;
+      var left = centerX - width / 2;
       left = Math.max(12, Math.min(window.innerWidth - width - 12, left));
-      /* pinned to the very bottom edge of the session column: floating up over the
-         transcript hides the messages, so the bubble stays down and only steps
-         aside by one bar height when something occupies the bottom band */
       var bottom = 8;
 
       var element = mode === 'hidden' ? live.recall : live.mini;
       if (element === null) return;
       var probeWidth = mode === 'hidden' ? Math.min(width, element.offsetWidth || 200) : width;
       var probeLeft = mode === 'hidden' ? left + (width - probeWidth) / 2 : left;
+      var styleKey = probeLeft.toFixed(1) + '|' + probeWidth.toFixed(1) + '|' + bottom + '|' + mode;
+      if (styleKey === live.styleKey) return;
+      live.styleKey = styleKey;
       element.style.left = probeLeft + 'px';
       element.style.width = probeWidth + 'px';
       element.style.bottom = bottom + 'px';
-      element.style.transform = tiltFor(rect);
+      element.style.transform = 'none';
     }
 
     /* ----------------------------------------------------------- auto shrink */
