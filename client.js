@@ -83,7 +83,12 @@ window.__ModuleLoader__.load({
       '}',
       '.dshcc-glass-surface{',
       '  position:relative; overflow:hidden;',
-      '  background:linear-gradient(157deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.06) 36%,',
+      /* Self-lit: two soft blooms live INSIDE the surface, so the frost reads the
+         same over a plain dark app background, a wallpaper, or nothing at all. */
+      '  background:',
+      '    radial-gradient(140% 120% at 8% -12%, rgba(128,162,255,.22) 0%, rgba(128,162,255,0) 58%),',
+      '    radial-gradient(120% 120% at 102% 110%, rgba(112,236,206,.16) 0%, rgba(112,236,206,0) 62%),',
+      '    linear-gradient(157deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.06) 36%,',
       '    rgba(255,255,255,.02) 58%, rgba(255,255,255,.10) 100%), var(--dshcc-tint);',
       '  -webkit-backdrop-filter:blur(var(--dshcc-blur)) saturate(var(--dshcc-sat)) brightness(var(--dshcc-bright));',
       '  backdrop-filter:blur(var(--dshcc-blur)) saturate(var(--dshcc-sat)) brightness(var(--dshcc-bright));',
@@ -104,9 +109,17 @@ window.__ModuleLoader__.load({
       '  background:linear-gradient(105deg, transparent 0%, rgba(255,255,255,.13) 42%,',
       '    transparent 58%); mix-blend-mode:screen; opacity:.55;',
       '}',
+      /* no backdrop-filter (old engine, disabled GPU compositing, forced solid bg):
+         lean on a denser tint so the panel still reads as glass instead of soup */
+      '@supports not ((backdrop-filter:blur(2px)) or (-webkit-backdrop-filter:blur(2px))){',
+      '  :root{ --dshcc-tint:rgba(15,15,21,.82); --dshcc-tint-strong:rgba(15,15,21,.88); }',
+      '}',
       /* ---------------- glass on the shipped composer ---------------- */
       'html.dshcc-glass [data-dshcc-root] [data-composer-card]{',
-      '  background:linear-gradient(157deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 40%,',
+      '  background:',
+      '    radial-gradient(140% 120% at 6% -14%, rgba(128,162,255,.20) 0%, rgba(128,162,255,0) 60%),',
+      '    radial-gradient(120% 120% at 104% 112%, rgba(112,236,206,.14) 0%, rgba(112,236,206,0) 64%),',
+      '    linear-gradient(157deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.05) 40%,',
       '    rgba(255,255,255,.02) 60%, rgba(255,255,255,.09) 100%), var(--dshcc-tint) !important;',
       /* NO backdrop-filter here: a 20px blur over the whole composer re-blurs the
          transcript on every keystroke and scroll tick — the single most expensive
@@ -164,7 +177,8 @@ window.__ModuleLoader__.load({
       '  font-family:inherit; font-size:11px;',
       '  color:rgba(255,255,255,.74);',
       '  border:1px solid var(--dshcc-edge);',
-      '  background:linear-gradient(157deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.06) 40%, var(--dshcc-tint-strong));',
+      '  background:radial-gradient(130% 130% at 18% -10%, rgba(140,172,255,.30), rgba(140,172,255,0) 62%),',
+      '    linear-gradient(157deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.06) 40%, var(--dshcc-tint-strong));',
       '  -webkit-backdrop-filter:blur(var(--dshcc-blur)) saturate(var(--dshcc-sat)) brightness(var(--dshcc-bright));',
       '  backdrop-filter:blur(var(--dshcc-blur)) saturate(var(--dshcc-sat)) brightness(var(--dshcc-bright));',
       '  box-shadow:inset 0 1px 0 rgba(255,255,255,.30), inset 0 -1px 0 rgba(24,24,30,.38),',
@@ -878,7 +892,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.5.1';
+    var VERSION = '0.6.0';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
