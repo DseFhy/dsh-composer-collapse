@@ -74,6 +74,7 @@ git clone <this-repo> ~/.dsh/plugins/dsh-composer-collapse
 | `dshcc.wall` | `1` | `1` 开启壁纸透传（清背景），`0` 关闭 |
 | `dshcc.depth` | `1` | 3D 倾斜深度倍数，`0.2`–`2.5` |
 | `dshcc.follow` | `1` | `1` 让排队消息栏跟随对话栏位移，`0` 关闭 |
+| `dshcc.fps` | `120` | 跟随循环的帧率上限，可用 30–240，刷新后生效 |
 
 例如关掉自动缩小与壁纸透传：
 
@@ -118,7 +119,7 @@ node --check client.js    # 唯一的静态检查
 - **不发请求**：`client.js` 里没有任何 `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon` 调用，不向任何服务器上报。
 - **不读账户与模型信息**：不读取 DSH 的登录态、凭据、profile、会话内容、模型名、provider 配置或计费信息；只操作 DOM 与 `localStorage`。
 - **不落盘、不索引对话内容**：只处理元素位置（`getBoundingClientRect`）与输入框是否为空，不读取、不缓存、不传输消息正文。
-- **只存 5 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.depth` / `dshcc.follow`，值都是状态字符串或数字。
+- **只存 6 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.depth` / `dshcc.follow` / `dshcc.fps`，值都是状态字符串或数字。
 - **纯本地**：没有遥测、没有崩溃上报、没有第三方脚本、没有 `eval`/`new Function`、没有任何外链资源。
 
 仓库里也不含作者的个人路径、凭据或密钥；安装时请勿把 `~/.dsh/.credentials.yaml` 之类的文件放进插件目录。

@@ -405,6 +405,21 @@ window.__ModuleLoader__.load({
     var pumpUntil = 0;
 
     /**
+     * Frame-rate cap. The follower/tilt loop only needs smooth motion, not every
+     * vsync tick, so paint runs at most FPS_CAP times per second. Override with
+     * localStorage.setItem('dshcc.fps', '60') (accepts 30-240, default 120) and
+     * reload the page.
+     */
+    function fpsCap() {
+      var raw = 0;
+      try { raw = parseInt(window.localStorage.getItem('dshcc.fps') || '', 10); } catch (err) { raw = 0; }
+      if (!raw || raw < 30 || raw > 240) raw = 120;
+      return raw;
+    }
+    var frameInterval = 1000 / fpsCap();
+    var lastPaintAt = 0;
+
+    /**
      * Coalesce every layout read into a single rAF. The loop is demand driven:
      * nothing is scheduled unless scroll/resize/mode change asks for it, so an
      * idle window costs zero frames (a resident rAF loop reading
@@ -427,6 +442,12 @@ window.__ModuleLoader__.load({
       frameQueued = false;
       live.raf = 0;
       if (document.hidden) { pumpUntil = 0; return; }
+      /* rate limit: re-arm the rAF but skip the layout read until the cap allows it */
+      if (now - lastPaintAt < frameInterval) {
+        if (now < pumpUntil) schedule(); else pumpUntil = 0;
+        return;
+      }
+      lastPaintAt = now;
       paint(now);
       if (now < pumpUntil) schedule(); else pumpUntil = 0;
     }
