@@ -130,6 +130,11 @@ window.__ModuleLoader__.load({
       '  animation:dshcc-fade .26s ease .3s both;',
       '}',
       '.dshcc-mini:hover{ color:rgba(255,255,255,.95); border-color:rgba(255,255,255,.32); }',
+      /* hide button that rides just outside the collapsed capsule */
+      '.dshcc-mini-hide{',
+      '  position:fixed; z-index:2147481100; width:26px; height:26px; border-radius:13px;',
+      '  pointer-events:auto;',
+      '}',
       '.dshcc-mini-arrow{ margin-left:auto; font-size:13px; opacity:.55;',
       '  transition:transform .32s cubic-bezier(.22,1,.36,1), opacity .3s; }',
       '.dshcc-mini:hover .dshcc-mini-arrow{ transform:translateY(-2px); opacity:.95; }',
@@ -298,6 +303,7 @@ window.__ModuleLoader__.load({
       lastSibling: null,
       dockRect: null,
       dockAt: 0,
+      miniHide: null,
       dockBase: null,
       dockX: 0,
       dockY: 0,
@@ -536,13 +542,20 @@ window.__ModuleLoader__.load({
       if (element === null) return;
       var probeWidth = mode === 'hidden' ? Math.min(width, element.offsetWidth || 200) : width;
       var probeLeft = mode === 'hidden' ? left + (width - probeWidth) / 2 : left;
-      var styleKey = probeLeft.toFixed(1) + '|' + probeWidth.toFixed(1) + '|' + bottom + '|' + mode;
+      /* the hide button rides just outside the capsule's right edge */
+      var hideSize = 26;
+      var hideLeft = Math.min(probeLeft + probeWidth + 8, window.innerWidth - hideSize - 10);
+      var styleKey = probeLeft.toFixed(1) + '|' + probeWidth.toFixed(1) + '|' + bottom + '|' + mode + '|' + hideLeft.toFixed(1);
       if (styleKey === live.styleKey) return;
       live.styleKey = styleKey;
       element.style.left = probeLeft + 'px';
       element.style.width = probeWidth + 'px';
       element.style.bottom = bottom + 'px';
       element.style.transform = 'none';
+      if (mode === 'mini' && live.miniHide !== null) {
+        live.miniHide.style.left = hideLeft + 'px';
+        live.miniHide.style.bottom = (bottom + (38 - hideSize) / 2) + 'px';
+      }
     }
 
     /* ----------------------------------------------------------- auto shrink */
@@ -663,8 +676,8 @@ window.__ModuleLoader__.load({
       var children = [];
 
       if (state.mode === 'mini') {
-        children.push(React.createElement('div', {
-          key: 'mini',
+        children.push(React.createElement(React.Fragment, { key: 'mini' },
+        React.createElement('div', {
           ref: function (el) { live.mini = el; },
           className: 'dshcc-mini dshcc-glass-surface dshcc-bubble',
           role: 'button',
@@ -678,6 +691,16 @@ window.__ModuleLoader__.load({
         },
         React.createElement('span', null, '写点什么…'),
         React.createElement('span', { className: 'dshcc-mini-arrow' }, '\u2191'),
+        ),
+        /* the only control kept while collapsed: hide, right of the capsule */
+        React.createElement('button', {
+          ref: function (el) { live.miniHide = el; },
+          type: 'button',
+          className: 'dshcc-btn dshcc-mini-hide dshcc-glass-surface',
+          title: '隐藏对话栏 (Ctrl+Shift+H)',
+          onMouseDown: function (event) { event.preventDefault(); },
+          onClick: function (event) { event.stopPropagation(); setMode('hidden'); },
+        }, icon(ICON_HIDE))
         ));
       }
 
@@ -702,16 +725,8 @@ window.__ModuleLoader__.load({
           className: 'dshcc-dock',
         },
         React.createElement(ControlButton, {
-          key: 'collapse', d: ICON_COLLAPSE, title: '收起对话栏 (Ctrl+Shift+M)',
-          onClick: function () { setMode('mini'); },
-        }),
-        React.createElement(ControlButton, {
           key: 'hide', d: ICON_HIDE, title: '隐藏对话栏 (Ctrl+Shift+H)',
           onClick: function () { setMode('hidden'); },
-        }),
-        React.createElement(ControlButton, {
-          key: 'record', d: ICON_RECORD, title: '记录帧率 20 秒 (Ctrl+Alt+P)',
-          onClick: function () { perfToggle(); },
         }),
         ));
       }
@@ -875,7 +890,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.4.1';
+    var VERSION = '0.5.0';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
@@ -1214,7 +1229,7 @@ window.__ModuleLoader__.load({
         tip.style.cssText = 'position:fixed;left:12px;bottom:56px;z-index:2147483646;padding:6px 10px;border-radius:10px;' +
           'font:12px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;background:rgba(12,12,16,.84);color:#ececf3;' +
           'pointer-events:none;transition:opacity .35s ease;box-shadow:0 2px 10px rgba(0,0,0,.3)';
-        tip.textContent = 'composer-collapse ' + VERSION + ' 已加载 · Ctrl+Alt+P 或控制簇 ⏺ 录帧';
+        tip.textContent = 'composer-collapse ' + VERSION + ' 已加载 · Ctrl+Shift+H 隐藏 · Ctrl+Alt+P 录帧';
         document.body.appendChild(tip);
         window.setTimeout(function () { tip.style.opacity = '0'; }, 3600);
         window.setTimeout(function () { if (tip.parentNode) tip.parentNode.removeChild(tip); }, 4200);
