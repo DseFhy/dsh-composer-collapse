@@ -1,5 +1,9 @@
 # Changelog
 
+## 仓库工具 — 2025-11-23
+
+- 新增 `tools/patch-win32-transparency.mjs`：可选的 Windows 外壳补丁（`transparent: true`），带 `--dry-run` 与 `--restore`，字节级原地修改、文件大小不变。doc：README「可选：Windows 真透明」。
+
 ## 0.6.2 — 2025-11-23
 
 - **壁纸透传（`dshcc.wall`）默认开启**：桌面版壳层现在支持透明窗口，页面默认清掉 `html` / `body` / `#root` / `.dsh-app` / `[data-dshcc-shell]` 的背景，玻璃面才有东西可透。`Ctrl+Shift+W` 仍可随时关掉。

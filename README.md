@@ -117,9 +117,30 @@ location.reload();
 
 ## 已知限制
 
-- **壁纸引擎透视**取决于 Electron 外壳是否开了透明窗（`transparent: true` / `vibrancy`）。插件跑在渲染进程里，只能清掉 CSS 背景，**不能**强制 `BrowserWindow` 变透明；若外壳不透明，清背景只会在窗口底色上留白。
+- **壁纸引擎透视**取决于 Electron 外壳是否开了透明窗（`transparent: true` / `vibrancy`）。插件跑在渲染进程里，只能清掉 CSS 背景，**不能**强制 `BrowserWindow` 变透明；若外壳不透明，清背景只会在窗口底色上留白。Windows 桌面版可选用下面的外壳补丁。
 - 依赖 DSH 的两个 DOM 契约：`[data-composer-card]` 与「composer 卡片是根节点的直接子元素」。DSH 改版后如缺失，插件会静默不生效（不会报错、不会破坏原生对话栏）。
 - 只做过 DSH 桌面版（Windows）实测，Web 版理论可用但未验证。
+
+## 可选：Windows 真透明（外壳补丁）
+
+`tools/patch-win32-transparency.mjs` 给桌面版的 `app.asar` 打一个字节级补丁，把主窗口的 `backgroundColor: chromeFallbackFill()` 换成 `transparent: true` + `#00000000`，并同步改掉标题栏覆盖色与三处 `setBackgroundColor`。文件**大小不变**（补丁后用空格补齐），asar 头部偏移不动，所以不需要重打包。
+
+```bash
+# 先看命中数，不写盘
+node tools/patch-win32-transparency.mjs --asar "F:/…/resources/app.asar" --dry-run
+# 打补丁（自动留 app.asar.orig-<日期> 备份）
+node tools/patch-win32-transparency.mjs --asar "F:/…/resources/app.asar"
+# 回滚
+node tools/patch-win32-transparency.mjs --asar "F:/…/resources/app.asar" --restore
+```
+
+注意事项（务必读完再跑）：
+
+- 需要**完全退出客户端再重新打开**才生效；刷新网页无效。
+- 透明窗在 Windows 上的已知代价：没有系统投影、最大化/贴边行为可能异常、个别 GPU 组合下会出现黑底。
+- **DSH 自动更新会覆盖 `app.asar`**，补丁随之丢失，需要重跑；备份文件不会自动清理。
+- 只改外壳窗口参数，页面内部面板仍然是 DSH 自己的不透明底色，所以观感是「窗口透出桌面 + 玻璃输入框」，不是整块 UI 浮空。
+- 不打这个补丁插件一切照旧，只是 `dshcc.wall` 清背景后看到的是窗口底色。
 
 ## 开发
 
