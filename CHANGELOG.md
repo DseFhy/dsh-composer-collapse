@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 — 2025-11-23
+
+- **修复折叠气泡跑到左上角**：`paint()` 以前一进来就 `if (card === null) return;`，而收起态的位置依赖只在 `full` 态写入的 `live.anchor` / `live.centerX`。刷新后直接进 `mini`/`hidden`、或切路由导致输入卡片暂缺时，整段提前 return，元素没有任何内联 `left`/`bottom`，`position:fixed` 无偏移 → 停在文档原点。
+- 收起态定位抽成 `positionCollapsed(mode)`：不再要求输入卡片存在，几何缺失时回落到视口底部居中；节点还没挂载时最多重试 40 帧（`live.retry`）。
+- 新增 CSS 默认位 `'.dshcc-mini, .dshcc-recall{ left:50%; bottom:8px; transform:translateX(-50%); }'`，JS 写偏移前的第一帧也是底部居中。
+- `mini` 态的隐藏小圆钮默认 `display:none`，由 JS 定位后置为 `grid`，避免未定位时闪在左上角。
+
 ## 0.6.0 — 2025-11-23
 
 - **玻璃不再依赖壁纸引擎**：玻璃面自己带两层柔光渐变（蓝紫左上、青绿右下），背景是什么都不影响观感；之前那层 `backdrop-filter` 只做锦上添花。

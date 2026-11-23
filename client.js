@@ -143,10 +143,12 @@ window.__ModuleLoader__.load({
       '  animation:dshcc-fade .26s ease .3s both;',
       '}',
       '.dshcc-mini:hover{ color:rgba(255,255,255,.95); border-color:rgba(255,255,255,.32); }',
+      /* before JS writes an offset: centred and bottom-anchored, never top-left */
+      '.dshcc-mini, .dshcc-recall{ left:50%; bottom:8px; transform:translateX(-50%); }',
       /* hide button that rides just outside the collapsed capsule */
       '.dshcc-mini-hide{',
       '  position:fixed; z-index:2147481100; width:26px; height:26px; border-radius:13px;',
-      '  pointer-events:auto;',
+      '  pointer-events:auto; display:none;',
       '}',
       '.dshcc-mini-arrow{ margin-left:auto; font-size:13px; opacity:.55;',
       '  transition:transform .32s cubic-bezier(.22,1,.36,1), opacity .3s; }',
@@ -318,6 +320,7 @@ window.__ModuleLoader__.load({
       dockRect: null,
       dockAt: 0,
       miniHide: null,
+      retry: 0,
       dock: null,
       dockBase: null,
       dockX: 0,
@@ -511,13 +514,58 @@ window.__ModuleLoader__.load({
       if (now < pumpUntil) schedule(); else pumpUntil = 0;
     }
 
+    /* Position the collapsed capsule without the composer card. "full" paints
+       cache the column centre; when the card is missing (reload straight into
+       mini/hidden, route switch) these cached values plus a viewport fallback
+       still put the capsule at the bottom centre instead of the page origin. */
+    function positionCollapsed(mode) {
+      var anchor = live.anchor;
+      var baseWidth = anchor !== null && anchor.width >= 2 ? anchor.width : 200;
+      var width = Math.min(200, Math.max(150, baseWidth - 24));
+      var centerX = live.centerX;
+      if (centerX === null || !isFinite(centerX)) centerX = window.innerWidth / 2;
+      var left = centerX - width / 2;
+      left = Math.max(12, Math.min(window.innerWidth - width - 12, left));
+      var bottom = 8;
+      var element = mode === "hidden" ? live.recall : live.mini;
+      if (!element) {
+        /* first frames after load: the node has not mounted yet */
+        if (live.retry < 40) { live.retry += 1; pump(600); }
+        return;
+      }
+      live.retry = 0;
+      var probeWidth = mode === "hidden" ? Math.min(width, element.offsetWidth || 200) : width;
+      var probeLeft = mode === "hidden" ? left + (width - probeWidth) / 2 : left;
+      /* the hide button rides just outside the capsule right edge */
+      var hideSize = 26;
+      var hideLeft = Math.min(probeLeft + probeWidth + 8, window.innerWidth - hideSize - 10);
+      var styleKey = probeLeft.toFixed(1) + "|" + probeWidth.toFixed(1) + "|" + bottom + "|" + mode + "|" + hideLeft.toFixed(1);
+      if (styleKey === live.styleKey) return;
+      live.styleKey = styleKey;
+      element.style.left = probeLeft + "px";
+      element.style.width = probeWidth + "px";
+      element.style.bottom = bottom + "px";
+      element.style.transform = "none";
+      if (mode === "mini" && live.miniHide) {
+        live.miniHide.style.left = hideLeft + "px";
+        live.miniHide.style.bottom = (bottom + (38 - hideSize) / 2) + "px";
+        live.miniHide.style.display = "grid";
+      }
+    }
+
+
     function paint(now) {
-      var card = composerCard();
-      if (card === null) return;
-      var root = card.parentElement;
-      if (root === null) return;
-      markRoot(root);
       var mode = store.get().mode;
+      var card = composerCard();
+      var root = card === null ? null : card.parentElement;
+      /* Collapsed modes must still place themselves when the composer is not
+         mounted (reload straight into mini/hidden, route switch, empty thread).
+         Bailing out here is what dumped the capsule into the document corner. */
+      if (card === null || root === null) {
+        if (mode !== 'full') positionCollapsed(mode);
+        return;
+      }
+      markRoot(root);
 
       if (mode === 'full') {
         var cardRect = card.getBoundingClientRect();
@@ -539,38 +587,10 @@ window.__ModuleLoader__.load({
         return;
       }
 
-      var anchor = live.anchor;
-      if (anchor === null || anchor.width < 2) return;
-      /* Deliberately NOT synced to the composer's live rect. A wallpaper engine
-         moves the composer with a composited transform; JS can only observe that
-         one or two frames late, so chasing it made the capsule trail behind and
-         stutter. The capsule now keeps a cached column centre and stays put -
-         independent, no per-frame rect read, no lag. It re-derives geometry on
-         resize / mode change (anchor is refreshed whenever "full" paints). */
-      var width = Math.min(200, Math.max(150, anchor.width - 24));
-      var centerX = live.centerX === null ? window.innerWidth / 2 : live.centerX;
-      var left = centerX - width / 2;
-      left = Math.max(12, Math.min(window.innerWidth - width - 12, left));
-      var bottom = 8;
-
-      var element = mode === 'hidden' ? live.recall : live.mini;
-      if (element === null) return;
-      var probeWidth = mode === 'hidden' ? Math.min(width, element.offsetWidth || 200) : width;
-      var probeLeft = mode === 'hidden' ? left + (width - probeWidth) / 2 : left;
-      /* the hide button rides just outside the capsule's right edge */
-      var hideSize = 26;
-      var hideLeft = Math.min(probeLeft + probeWidth + 8, window.innerWidth - hideSize - 10);
-      var styleKey = probeLeft.toFixed(1) + '|' + probeWidth.toFixed(1) + '|' + bottom + '|' + mode + '|' + hideLeft.toFixed(1);
-      if (styleKey === live.styleKey) return;
-      live.styleKey = styleKey;
-      element.style.left = probeLeft + 'px';
-      element.style.width = probeWidth + 'px';
-      element.style.bottom = bottom + 'px';
-      element.style.transform = 'none';
-      if (mode === 'mini' && live.miniHide !== null) {
-        live.miniHide.style.left = hideLeft + 'px';
-        live.miniHide.style.bottom = (bottom + (38 - hideSize) / 2) + 'px';
-      }
+      /* Cached geometry, never a per-frame rect read: a wallpaper engine moves the
+         composer with a composited transform that JS observes one or two frames
+         late, so chasing it made the capsule trail and stutter. */
+      positionCollapsed(mode);
     }
 
     /* ----------------------------------------------------------- auto shrink */
@@ -892,7 +912,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.6.0';
+    var VERSION = '0.6.1';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
