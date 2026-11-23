@@ -21,6 +21,7 @@ hidden  ── 完全隐藏，只留一条常驻召回胶囊
 - **点消息即收起**：点对话栏上方的对话区域，自动收成气泡。
 - **壁纸透传**：可清掉 `html` / `body` / 应用外壳的背景，让壁纸从毛玻璃后面透出来。
 - **尊重 `prefers-reduced-motion`**：系统的减少动效偏好会关掉过渡。
+- **带帧率探测**：`Ctrl+Shift+P` 录 20 秒，导出帧间隔 / 事件耗时 / 长任务 / DOM 变更热点的 JSON，用来定位「哪次操作最卡」。默认不采集。
 
 ## 安装
 
@@ -60,8 +61,30 @@ git clone <this-repo> ~/.dsh/plugins/dsh-composer-collapse
 | 隐藏 / 召回 | 控制簇 `✕` 按钮，或 `Ctrl+Shift+H` |
 | 点击对话区域 | 自动收起（仅在 `full` 状态） |
 | 恢复 | `Esc` |
+| 帧率探测 | `Ctrl+Shift+P`（录 20 秒，再按一次提前结束） |
 
-控制簇是对话栏右上角的三个玻璃小圆钮（收起 / 隐藏），悬停才显形。
+控制簇是对话栏右上角的两个玻璃小圆钮（收起 / 隐藏），悬停才显形。
+
+## 帧率探测（诊断卡顿）
+
+觉得界面卡、又不知道卡在什么操作上时用这个：
+
+1. 按 `Ctrl+Shift+P`，左下角出现 `REC 20s · xx fps` 角标，正常操作界面（滚动、打字、切会话、拖动窗口）。
+2. 20 秒后（或再按一次 `Ctrl+Shift+P`）自动停止，浏览器下载 `dshcc-perf-<时间戳>.json`，同时控制台打印摘要表格。
+
+报告里有什么：
+
+| 字段 | 含义 |
+| --- | --- |
+| `fps` | 帧间隔 p50/p95/p99、中位 fps、超过 33/50/100ms 的帧数 |
+| `events.slowest` | 每次输入/点击/滚轮的事件类型、目标元素、处理耗时（Event Timing） |
+| `longTasks` | 超过 50ms 的任务数与最长的几条 |
+| `loaf.worst` | 长动画帧：哪个脚本/函数阻塞、强制样式与布局各耗多少 |
+| `mutations` | 每 250ms 的 DOM 变更量（哪段时间在狂重渲染）+ 变更最多的节点 |
+| `inputs.timeline` | 你按下/滚动/输入的时间点，用来对齐上面的尖峰 |
+| `modes` | 插件自身模式切换的时间点 |
+
+也可以用控制台：`window.__dshccPerf.start(30)` / `window.__dshccPerf.stop()` / `window.__dshccPerf.active()`。
 
 ## 配置
 
@@ -121,6 +144,7 @@ node --check client.js    # 唯一的静态检查
 - **不落盘、不索引对话内容**：只处理元素位置（`getBoundingClientRect`）与输入框是否为空，不读取、不缓存、不传输消息正文。
 - **只存 6 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.depth` / `dshcc.follow` / `dshcc.fps`，值都是状态字符串或数字。
 - **纯本地**：没有遥测、没有崩溃上报、没有第三方脚本、没有 `eval`/`new Function`、没有任何外链资源。
+- **帧率探测只在你手动按 `Ctrl+Shift+P` 时运行**：报告存在你本机（浏览器下载目录），不自动上传。报告含视口尺寸、UA、以及被操作的 DOM 节点选择器描述（如 `div.composer-card`），**不含**消息正文与输入内容。
 
 仓库里也不含作者的个人路径、凭据或密钥；安装时请勿把 `~/.dsh/.credentials.yaml` 之类的文件放进插件目录。
 

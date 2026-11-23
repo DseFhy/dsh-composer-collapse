@@ -754,9 +754,24 @@ window.__ModuleLoader__.load({
           writeStored(KEY_WALL, wall ? '1' : '0');
           store.set({ wall: wall });
           applyDocumentFlags();
+        } else if (key === 'p') {
+          event.preventDefault();
+          perfToggle();
         }
       };
       window.addEventListener('keydown', onKey);
+
+      /* Opt-in frame/render probe. Ctrl+Shift+P records 20 s and downloads JSON. */
+      window.__dshccPerf = {
+        start: function (seconds) { return perfStart(seconds || PERF_SECONDS); },
+        stop: function () { return perfStop(false); },
+        report: function () { return perf.rec === null ? null : perfReport(perf.rec); },
+        active: function () { return perf.active; },
+      };
+      disposers.push(function () {
+        perfStop(true);
+        if (window.__dshccPerf) delete window.__dshccPerf;
+      });
 
       /* demand driven: reposition on scroll/resize/wheel and during transitions only */
       var kick = function () { schedule(); };
@@ -797,6 +812,293 @@ window.__ModuleLoader__.load({
           if (tag !== null && tag.parentNode !== null) tag.parentNode.removeChild(tag);
         };
       });
+    }
+
+    /* ---- frame / render probe ------------------------------------------------
+     * Ctrl+Shift+P starts a 20 s recording (press again to stop early). While it
+     * runs it collects: rAF deltas, Event Timing (input -> processing duration),
+     * long tasks, LoAF entries (which script blocked the frame), DOM mutation
+     * volume per 250 ms bucket, our own mode changes and JS heap samples.
+     * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
+     * Opt-in: nothing runs unless the hotkey is pressed.
+     */
+    var PERF_SECONDS = 20;
+    var PERF_EVENT_MIN = 16;
+
+    function perfText(node) {
+      if (node === null || node === undefined) return 'null';
+      if (node.nodeType !== 1) return String(node.nodeName || node);
+      var out = String(node.tagName).toLowerCase();
+      if (node.id) out += '#' + node.id;
+      var cls = String(node.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 3).join('.');
+      if (cls) out += '.' + cls;
+      var mark = node.getAttribute('role') || node.getAttribute('aria-label') || node.getAttribute('data-testid');
+      if (mark) out += '[' + String(mark).slice(0, 40) + ']';
+      return out;
+    }
+
+    function perfPct(sorted, p) {
+      if (sorted.length === 0) return 0;
+      var idx = Math.floor((sorted.length - 1) * p);
+      if (idx < 0) idx = 0;
+      if (idx > sorted.length - 1) idx = sorted.length - 1;
+      return sorted[idx];
+    }
+
+    function perfStart(seconds) {
+      if (perf.active) return null;
+      var limit = (seconds || PERF_SECONDS) * 1000;
+      var now = window.performance.now();
+      var rec = {
+        startedAt: new Date().toISOString(),
+        t0: now,
+        limit: limit,
+        frames: [],
+        events: [],
+        tasks: [],
+        loafs: [],
+        inputs: [],
+        buckets: [],
+        modes: [],
+        heap: [],
+        obs: [],
+        types: [],
+        mutTop: {},
+      };
+      perf.rec = rec;
+      perf.active = true;
+      var cap = function (arr, max) { if (arr.length > max) arr.splice(0, arr.length - max); };
+
+      /* frame deltas: one cheap rAF loop, capped so it cannot flood memory */
+      var last = 0;
+      var loop = function (ts) {
+        if (!perf.active) return;
+        if (last > 0) {
+          rec.frames.push(Math.round((ts - last) * 10) / 10);
+          cap(rec.frames, 8000);
+        }
+        last = ts;
+        if (ts - rec.t0 >= rec.limit) { perfStop(false); return; }
+        rec.raf = window.requestAnimationFrame(loop);
+      };
+      rec.raf = window.requestAnimationFrame(loop);
+
+      /* performance observers, each optional: older Chromium lacks some types */
+      var addObserver = function (type, options, handler) {
+        try {
+          var observer = new PerformanceObserver(handler);
+          observer.observe(options);
+          rec.obs.push(observer);
+        } catch (error) { /* type unsupported here */ }
+      };
+      addObserver('longtask', { type: 'longtask', buffered: false }, function (list) {
+        list.getEntries().forEach(function (entry) {
+          rec.tasks.push({
+            t: Math.round(entry.startTime),
+            dur: Math.round(entry.duration),
+            name: String(entry.name || ''),
+            attr: (entry.attribution || []).map(function (a) { return String(a.name || '') + '/' + String(a.containerType || ''); }).join(','),
+          });
+          cap(rec.tasks, 2000);
+        });
+      });
+      addObserver('event', { type: 'event', durationThreshold: PERF_EVENT_MIN, buffered: false }, function (list) {
+        list.getEntries().forEach(function (entry) {
+          rec.events.push({
+            t: Math.round(entry.startTime),
+            type: String(entry.name || ''),
+            dur: Math.round(entry.duration),
+            proc: Math.round((entry.processingEnd || entry.startTime) - (entry.processingStart || entry.startTime)),
+            input: Math.round((entry.processingStart || entry.startTime) - entry.startTime),
+            target: perfText(entry.target),
+          });
+          cap(rec.events, 3000);
+        });
+      });
+      addObserver('long-animation-frame', { type: 'long-animation-frame', buffered: false }, function (list) {
+        list.getEntries().forEach(function (entry) {
+          var scripts = (entry.scripts || []).map(function (s) {
+            return {
+              fn: String(s.sourceFunctionName || ''),
+              url: String(s.sourceURL || '').split('/').slice(-1)[0],
+              invoker: String(s.invoker || ''),
+              dur: Math.round(s.duration || 0),
+              forced: Math.round(s.forcedStyleAndLayoutDuration || 0),
+            };
+          }).sort(function (a, b) { return b.dur - a.dur; }).slice(0, 6);
+          rec.loafs.push({
+            t: Math.round(entry.startTime),
+            dur: Math.round(entry.duration),
+            block: Math.round(entry.blockingDuration || 0),
+            render: Math.round((entry.styleAndLayoutStart || 0) - (entry.renderStart || 0)),
+            layout: Math.round((entry.startTime + entry.duration) - (entry.styleAndLayoutStart || 0)),
+            scripts: scripts,
+          });
+          cap(rec.loafs, 400);
+        });
+      });
+
+      /* DOM churn: how much the app re-renders, and where */
+      try {
+        rec.mo = new MutationObserver(function (records) {
+          var at = window.performance.now();
+          var index = Math.floor((at - rec.t0) / 250);
+          while (rec.buckets.length < index) rec.buckets.push(0);
+          rec.buckets[index] = (rec.buckets[index] || 0) + records.length;
+          for (var i = 0; i < records.length && i < 60; i++) {
+            var record = records[i];
+            var key = perfText(record.target);
+            var slot = rec.mutTop[key];
+            if (!slot) { slot = { n: 0, add: 0, del: 0, attr: 0, text: 0 }; rec.mutTop[key] = slot; }
+            slot.n += 1;
+            if (record.type === 'attributes') slot.attr += 1;
+            else if (record.type === 'characterData') slot.text += 1;
+            slot.add += record.addedNodes ? record.addedNodes.length : 0;
+            slot.del += record.removedNodes ? record.removedNodes.length : 0;
+          }
+        });
+        rec.mo.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+      } catch (error) { /* body not ready */ }
+
+      /* raw input marks: the "what did I do" timeline */
+      var inputTypes = ['pointerdown', 'pointerup', 'click', 'wheel', 'keydown', 'input', 'compositionstart', 'scroll'];
+      rec.inputFn = function (event) {
+        rec.inputs.push({ t: Math.round(window.performance.now()), type: event.type, target: perfText(event.target) });
+        cap(rec.inputs, 4000);
+      };
+      inputTypes.forEach(function (type) {
+        window.addEventListener(type, rec.inputFn, { capture: true, passive: true });
+        rec.types.push(type);
+      });
+
+      /* our own mode transitions, for correlating with the spikes */
+      var modeNow = null;
+      rec.modeT = window.setInterval(function () {
+        var root = document.querySelector('[data-dshcc-root]');
+        var mode = root === null ? 'none' : String(root.getAttribute('data-dshcc-mode') || '');
+        if (mode !== modeNow) {
+          modeNow = mode;
+          rec.modes.push({ t: Math.round(window.performance.now()), mode: mode });
+        }
+      }, 120);
+
+      rec.heapT = window.setInterval(function () {
+        var memory = window.performance && window.performance.memory;
+        if (memory) rec.heap.push([Math.round(window.performance.now()), Math.round(memory.usedJSHeapSize / 1048576)]);
+        cap(rec.heap, 600);
+      }, 1000);
+
+      if (perf.badge === null) {
+        var badge = document.createElement('div');
+        badge.setAttribute('data-dshcc-perf', '1');
+        badge.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:5px 9px;border-radius:9px;' +
+          'font:11px/1.45 ui-monospace,Consolas,monospace;background:rgba(12,12,16,.84);color:#e9e9f2;' +
+          'pointer-events:none;white-space:pre;box-shadow:0 2px 10px rgba(0,0,0,.35)';
+        document.body.appendChild(badge);
+        perf.badge = badge;
+      }
+      rec.badgeT = window.setInterval(function () {
+        if (!perf.active) return;
+        var recent = rec.frames.slice(-24);
+        var sum = 0;
+        for (var i = 0; i < recent.length; i++) sum += recent[i];
+        var fps = sum > 0 ? Math.round((recent.length * 1000) / sum) : 0;
+        var left = Math.max(0, Math.round((rec.limit - (window.performance.now() - rec.t0)) / 1000));
+        perf.badge.textContent = 'REC ' + left + 's  ' + fps + ' fps\n' +
+          'mut ' + (rec.buckets.length ? rec.buckets[rec.buckets.length - 1] : 0) + '  tasks ' + rec.tasks.length + '  loaf ' + rec.loafs.length;
+      }, 200);
+      return rec;
+    }
+
+    function perfReport(rec) {
+      var frames = rec.frames.slice().sort(function (a, b) { return a - b; });
+      var slow33 = 0, slow50 = 0, slow100 = 0;
+      rec.frames.forEach(function (dt) { if (dt > 33.4) slow33 += 1; if (dt > 50) slow50 += 1; if (dt > 100) slow100 += 1; });
+      var byEvent = rec.events.slice().sort(function (a, b) { return b.dur - a.dur; }).slice(0, 30);
+      var byTask = rec.tasks.slice().sort(function (a, b) { return b.dur - a.dur; }).slice(0, 20);
+      var byLoaf = rec.loafs.slice().sort(function (a, b) { return b.dur - a.dur; }).slice(0, 12);
+      var hot = [];
+      for (var key in rec.mutTop) hot.push({ target: key, n: rec.mutTop[key].n, add: rec.mutTop[key].add, del: rec.mutTop[key].del, attr: rec.mutTop[key].attr, text: rec.mutTop[key].text });
+      hot.sort(function (a, b) { return b.n - a.n; });
+      var inputCount = {};
+      rec.inputs.forEach(function (input) { inputCount[input.type] = (inputCount[input.type] || 0) + 1; });
+      var peakBucket = 0, peakIndex = -1;
+      rec.buckets.forEach(function (value, index) { if (value > peakBucket) { peakBucket = value; peakIndex = index; } });
+      return {
+        plugin: 'dsh-composer-collapse perf probe',
+        startedAt: rec.startedAt,
+        seconds: Math.round((window.performance.now() - rec.t0) / 100) / 10,
+        viewport: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio },
+        userAgent: navigator.userAgent,
+        fps: {
+          frames: rec.frames.length,
+          p50ms: perfPct(frames, 0.5),
+          p95ms: perfPct(frames, 0.95),
+          p99ms: perfPct(frames, 0.99),
+          worstms: frames.length ? frames[frames.length - 1] : 0,
+          medianFps: perfPct(frames, 0.5) > 0 ? Math.round(10000 / perfPct(frames, 0.5)) / 10 : 0,
+          slowOver33ms: slow33,
+          slowOver50ms: slow50,
+          slowOver100ms: slow100,
+        },
+        longTasks: { count: rec.tasks.length, totalMs: rec.tasks.reduce(function (sum, t) { return sum + t.dur; }, 0), worst: byTask },
+        events: { count: rec.events.length, slowest: byEvent },
+        loaf: { count: rec.loafs.length, worst: byLoaf },
+        mutations: { per250ms: rec.buckets, peak: peakBucket, peakAtMs: peakIndex < 0 ? -1 : peakIndex * 250, hotspots: hot.slice(0, 15) },
+        inputs: { counts: inputCount, timeline: rec.inputs.slice(0, 600) },
+        modes: rec.modes,
+        heapMB: rec.heap,
+      };
+    }
+
+    function perfStop(silent) {
+      if (!perf.active) return null;
+      var rec = perf.rec;
+      perf.active = false;
+      window.cancelAnimationFrame(rec.raf);
+      window.clearInterval(rec.modeT);
+      window.clearInterval(rec.heapT);
+      window.clearInterval(rec.badgeT);
+      rec.obs.forEach(function (observer) { try { observer.disconnect(); } catch (error) { /* gone */ } });
+      if (rec.mo) rec.mo.disconnect();
+      rec.types.forEach(function (type) {
+        window.removeEventListener(type, rec.inputFn, { capture: true });
+      });
+      if (perf.badge !== null) {
+        if (perf.badge.parentNode) perf.badge.parentNode.removeChild(perf.badge);
+        perf.badge = null;
+      }
+      var report = perfReport(rec);
+      if (silent === true) return report;
+      try {
+        console.group('[dshcc perf] ' + report.seconds + 's, median ' + report.fps.medianFps + ' fps, ' +
+          report.fps.slowOver50ms + ' frames over 50ms, ' + report.longTasks.count + ' long tasks');
+        console.log('fps', report.fps);
+        console.table(report.events.slowest.map(function (e) { return { t: e.t, type: e.type, dur: e.dur, proc: e.proc, target: e.target }; }));
+        console.table(report.longTasks.worst.map(function (e) { return { t: e.t, dur: e.dur, name: e.name }; }));
+        console.table(report.mutations.hotspots.map(function (e) { return { target: e.target, n: e.n, add: e.add, del: e.del, attr: e.attr }; }));
+        console.groupEnd();
+      } catch (error) { /* console closed */ }
+      var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      try {
+        var blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'dshcc-perf-' + stamp + '.json';
+        document.body.appendChild(link);
+        link.click();
+        window.setTimeout(function () {
+          URL.revokeObjectURL(url);
+          if (link.parentNode) link.parentNode.removeChild(link);
+        }, 3000);
+      } catch (error) { /* download blocked */ }
+      return report;
+    }
+
+    function perfToggle() {
+      if (perf.active) perfStop(false);
+      else perfStart(PERF_SECONDS);
     }
 
     exports.apply = apply;

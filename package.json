@@ -1,6 +1,6 @@
 {
   "name": "@dsh-local/dsh-composer-collapse",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Collapse, auto-shrink, or hide the DSH Web GUI composer. Liquid-glass summon capsule, frame-synced parallax, wallpaper pass-through.",
   "license": "MIT",
