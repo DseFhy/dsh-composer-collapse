@@ -211,7 +211,7 @@ window.__ModuleLoader__.load({
         mode: 'full',
         userMode: readStored(KEY_MODE, 'full'),
         auto: readStored(KEY_AUTO, '1') === '1',
-        wall: readStored(KEY_WALL, '0') === '1',
+        wall: readStored(KEY_WALL, '1') === '1',
         hasCard: false,
       };
       if (value.userMode !== 'mini' && value.userMode !== 'hidden') value.userMode = 'full';
@@ -912,7 +912,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.6.1';
+    var VERSION = '0.6.2';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 

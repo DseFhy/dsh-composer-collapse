@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — 2025-11-23
+
+- **壁纸透传（`dshcc.wall`）默认开启**：桌面版壳层现在支持透明窗口，页面默认清掉 `html` / `body` / `#root` / `.dsh-app` / `[data-dshcc-shell]` 的背景，玻璃面才有东西可透。`Ctrl+Shift+W` 仍可随时关掉。
+- 说明：真透明需要桌面版壳层配合（见仓库 README 的「已知限制」）；只在窗口内做玻璃时把 `dshcc.wall` 设为 `0`。
+
 ## 0.6.1 — 2025-11-23
 
 - **修复折叠气泡跑到左上角**：`paint()` 以前一进来就 `if (card === null) return;`，而收起态的位置依赖只在 `full` 态写入的 `live.anchor` / `live.centerX`。刷新后直接进 `mini`/`hidden`、或切路由导致输入卡片暂缺时，整段提前 return，元素没有任何内联 `left`/`bottom`，`position:fixed` 无偏移 → 停在文档原点。
