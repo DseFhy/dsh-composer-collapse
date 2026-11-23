@@ -304,6 +304,7 @@ window.__ModuleLoader__.load({
       dockRect: null,
       dockAt: 0,
       miniHide: null,
+      dock: null,
       dockBase: null,
       dockX: 0,
       dockY: 0,
@@ -349,7 +350,7 @@ window.__ModuleLoader__.load({
      */
     function followDockWith(cardRect, deltaX, deltaY, first, now) {
       var el = live.dock;
-      if (el === null) return;
+      if (!el) return;
       var moving = Math.abs(deltaX) > 0.35 || Math.abs(deltaY) > 0.35;
       if (moving) {
         live.dockX += deltaX;
@@ -379,7 +380,7 @@ window.__ModuleLoader__.load({
 
     function placeDock(cardRect) {
       var el = live.dock;
-      if (el === null) return;
+      if (!el) return;
       var height = el.offsetHeight || 26;
       var gap = 6;
       /* Never inside the card: an inset cluster sits on top of the text you are
@@ -717,19 +718,6 @@ window.__ModuleLoader__.load({
         }, icon(ICON_EXPAND), React.createElement('span', null, '展开对话栏')));
       }
 
-      if (state.mode === 'full') {
-        children.push(React.createElement('div', {
-          key: 'dock',
-          ref: function (el) { live.dock = el; },
-          [CHROME_ATTR]: '',
-          className: 'dshcc-dock',
-        },
-        React.createElement(ControlButton, {
-          key: 'hide', d: ICON_HIDE, title: '隐藏对话栏 (Ctrl+Shift+H)',
-          onClick: function () { setMode('hidden'); },
-        }),
-        ));
-      }
 
       return React.createElement(React.Fragment, null, children);
     }
@@ -890,7 +878,7 @@ window.__ModuleLoader__.load({
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.5.0';
+    var VERSION = '0.5.1';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
