@@ -40,6 +40,12 @@ window.__ModuleLoader__.load({
 var KEY_SCROLL = 'dshcc.scroll';
     var AUTO_DELAY_MS = 2200;
     var CHROME_ATTR = 'data-dshcc-chrome';
+    /* Startup quiet: no transition on first paint, no auto-collapse right
+       after a session opens (that reads as an upward twitch at the bottom). */
+    var BOOT_QUIET_MS = 1500;
+    var OPEN_HOLD_MS = 3000;
+    var bootedAt = Date.now();
+    var cardShownAt = 0;
 
     var CSS = [
       /* ---------------- the composer itself ---------------- */
@@ -66,6 +72,8 @@ var KEY_SCROLL = 'dshcc.scroll';
       '  [data-dshcc-root]{transition:none !important}',
       '  .dshcc-bubble{animation:none !important}',
       '}',
+      'html.dshcc-boot [data-dshcc-root]{transition:none !important}',
+      'html.dshcc-boot .dshcc-bubble{animation:none !important}',
       /* ---------------- wallpaper pass-through ---------------- */
       'html.dshcc-wall, html.dshcc-wall body{',
       '  background:transparent !important; background-color:transparent !important;',
@@ -663,6 +671,7 @@ function atBottom(host) {
         if (!current.auto || current.mode !== 'full') return;
         if (!pageUsable()) return;
         if (editingLocked()) return;
+        if (Date.now() - Math.max(bootedAt, cardShownAt) < OPEN_HOLD_MS) return;
         var card = composerCard();
         if (card === null) return;
         if (card.contains(document.activeElement)) return;
@@ -835,6 +844,17 @@ function atBottom(host) {
 
       var disposers = [];
       applyDocumentFlags();
+      var bootHtml = document.documentElement;
+      if (bootHtml !== null) {
+        bootHtml.classList.add('dshcc-boot');
+        var bootTimer = window.setTimeout(function () {
+          bootHtml.classList.remove('dshcc-boot');
+        }, BOOT_QUIET_MS);
+        disposers.push(function () {
+          window.clearTimeout(bootTimer);
+          bootHtml.classList.remove('dshcc-boot');
+        });
+      }
       disposers.push(startAutoShrink());
 
       var resizeObserver = new ResizeObserver(function () { schedule(); });
@@ -844,7 +864,10 @@ function atBottom(host) {
         var card = composerCard();
         if (card !== null) markRoot(rootOf(card));
         var hasCard = card !== null;
-        if (hasCard !== store.get().hasCard) store.set({ hasCard: hasCard });
+        if (hasCard !== store.get().hasCard) {
+          if (hasCard) cardShownAt = Date.now();
+          store.set({ hasCard: hasCard });
+        }
         schedule();
       });
       domObserver.observe(document.body, { childList: true, subtree: true });
@@ -998,7 +1021,7 @@ function atBottom(host) {
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.8.0';
+    var VERSION = '0.8.1';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
