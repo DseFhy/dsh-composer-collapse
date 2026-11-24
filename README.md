@@ -15,6 +15,7 @@ hidden  ── 完全隐藏，只留一条常驻召回胶囊
 - **三态收起**：`full` / `mini` / `hidden`，状态写入 `localStorage`，重启后保持。
 - **自动缩小**：输入框为空、失去焦点约 2.2 秒后自动收成 `mini`；一聚焦、一打字立刻展开，不会打断输入。
 - **编辑时强制不折叠**：焦点在可编辑字段（插话输入框、行内编辑框、`contenteditable`）时，自动缩小与「点消息收起」全部暂停；最后一次输入后还有 2.5 秒尾巴，刚停手不会被折走。
+- **底部上滑即收起**：消息列表贴底时鼠标滚轮往上一滑就收成胶囊（你在往上翻，底部那条正挡视野）；滚回底部或点胶囊复原。`dshcc.scroll = '0'` 可关。
 - **预留底部带**：收起后对话栏不再压到 0 高，而是保留 54px 的透明带。消息列表在这里停住，气泡落在带内 —— **不会盖住最后一条消息**。
 - **液态玻璃常开、自带光源**：每块玻璃面内含两层柔和光晕（蓝紫 + 青绿）+ 拟态内阴影，毛玻璃配方统一走 `--dshcc-blur` / `--dshcc-sat` / `--dshcc-tint`。**不依赖壁纸引擎**：没有壁纸、应用背景是纯色，照样有厚度和光感；`backdrop-filter` 不可用时自动改用更实的底色兜底。
 - **气泡独立、不追帧**：收起后的胶囊只用「缓存的列中心 + 贴底」定位，不逐帧读 rect、不逐帧写样式，所以壁纸引擎怎么动都不会拖影、不会抖；展开时再刷新一次几何。
@@ -99,6 +100,7 @@ git clone <this-repo> ~/.dsh/plugins/dsh-composer-collapse
 | `dshcc.wall` | `1` | `1` 开启壁纸透传（清背景），`0` 关闭 |
 | `dshcc.follow` | `1` | `1` 让排队消息栏跟随对话栏位移，`0` 关闭 |
 | `dshcc.fps` | `120` | 跟随循环的帧率上限，可用 30–240，刷新后生效 |
+| `dshcc.scroll` | `1` | `1` 让「贴底上滑」收起对话栏，`0` 关闭 |
 
 例如关掉自动缩小与壁纸透传：
 
@@ -164,7 +166,7 @@ node --check client.js    # 唯一的静态检查
 - **不发请求**：`client.js` 里没有任何 `fetch` / `XMLHttpRequest` / `WebSocket` / `sendBeacon` 调用，不向任何服务器上报。
 - **不读账户与模型信息**：不读取 DSH 的登录态、凭据、profile、会话内容、模型名、provider 配置或计费信息；只操作 DOM 与 `localStorage`。
 - **不落盘、不索引对话内容**：只处理元素位置（`getBoundingClientRect`）与输入框是否为空，不读取、不缓存、不传输消息正文。
-- **只存 5 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.follow` / `dshcc.fps`，值都是状态字符串或数字。
+- **只存 6 个开关**：`localStorage` 里仅 `dshcc.mode` / `dshcc.auto` / `dshcc.wall` / `dshcc.follow` / `dshcc.fps` / `dshcc.scroll`，值都是状态字符串或数字。
 - **纯本地**：没有遥测、没有崩溃上报、没有第三方脚本、没有 `eval`/`new Function`、没有任何外链资源。
 - **帧率探测只在你手动按 `Ctrl+Shift+P` 时运行**：报告存在你本机（浏览器下载目录），不自动上传。报告含视口尺寸、UA、以及被操作的 DOM 节点选择器描述（如 `div.composer-card`），**不含**消息正文与输入内容。
 

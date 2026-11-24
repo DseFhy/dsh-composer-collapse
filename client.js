@@ -37,6 +37,7 @@ window.__ModuleLoader__.load({
     var KEY_AUTO = 'dshcc.auto';
     var KEY_WALL = 'dshcc.wall';
     var KEY_FOLLOW = 'dshcc.follow';
+var KEY_SCROLL = 'dshcc.scroll';
     var AUTO_DELAY_MS = 2200;
     var CHROME_ATTR = 'data-dshcc-chrome';
 
@@ -273,6 +274,23 @@ function editingLocked() {
   var card = composerCard();
   if (card !== null && card.contains(el)) return true;
   return false;
+}
+/* Scrolling up from the very bottom means the reader wants the whole screen:
+   the pinned composer is in the way, so it folds away. */
+function scrollHostOf(el) {
+  var node = el;
+  while (node !== null && node !== undefined && node.nodeType === 1) {
+    var style = window.getComputedStyle(node);
+    var overflowY = style.overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 8) return node;
+    node = node.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function atBottom(host) {
+  if (host === null || host === undefined) return false;
+  return host.scrollHeight - host.scrollTop - host.clientHeight <= 14;
 }
 
     function markRoot(root) {
@@ -867,6 +885,24 @@ function editingLocked() {
       };
       document.addEventListener('pointerdown', onPointerDown, true);
 
+      /* Wheel up while the message list sits at the bottom folds the composer:
+         the reader asked for room; scrolling back down (or the capsule) restores
+         it. Disable with localStorage dshcc.scroll = '0'. */
+      var onWheelUp = function (event) {
+        if (readStored(KEY_SCROLL, '1') === '0') return;
+        if (store.get().mode !== 'full') return;
+        if (event.deltaY > -1) return;
+        if (editingLocked()) return;
+        if (editableTarget(event.target)) return;
+        var card = composerCard();
+        if (card === null) return;
+        var host = scrollHostOf(card.parentElement !== null ? card.parentElement : card);
+        if (!atBottom(host)) return;
+        setMode('mini', { persist: false });
+      };
+      window.addEventListener('wheel', onWheelUp, { passive: true, capture: true });
+      disposers.push(function () { window.removeEventListener('wheel', onWheelUp, { passive: true, capture: true }); });
+
       var onKey = function (event) {
         if (event.key === 'Escape' && (store.get().mode === 'mini' || store.get().mode === 'hidden')) {
           setMode('full');
@@ -962,7 +998,7 @@ function editingLocked() {
      * Stopping prints a console summary and downloads dshcc-perf-<stamp>.json.
      * Opt-in: nothing runs unless the hotkey is pressed.
      */
-    var VERSION = '0.7.0';
+    var VERSION = '0.8.0';
     var PERF_SECONDS = 20;
     var PERF_EVENT_MIN = 16;
 
